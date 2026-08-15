@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace RagBasico.Core.Embeddings
+namespace RagBasico.Data.Embeddings
 {
     public sealed record EmbeddingRequest(
         [property: JsonPropertyName("model")] string Model,

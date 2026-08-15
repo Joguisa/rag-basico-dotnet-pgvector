@@ -2,7 +2,9 @@ using Npgsql;
 using RagBasico.Api.DTOs;
 using RagBasico.Core.Embeddings;
 using RagBasico.Core.Ingestion;
+using RagBasico.Core.Persistence;
 using RagBasico.Data;
+using RagBasico.Data.Embeddings;
 
 var builder = WebApplication.CreateBuilder(args); // crea el constuctor de la aplicacion web
 
@@ -11,10 +13,13 @@ var connectionString = builder.Configuration.GetConnectionString("Postgres")
 
 builder.Services.AddSingleton(_ => RagDataSource.Create(connectionString)); // 
 
-builder.Services.AddHttpClient<OllamaEmbeddingClient>(client =>
+builder.Services.AddHttpClient<IEmbeddingClient, OllamaEmbeddingClient>(client =>
 {
     client.BaseAddress = new Uri("http://localhost:11434");
 });
+
+builder.Services.AddScoped<IChunkRepository, ChunkRepository>();
+
 
 var app = builder.Build(); // construye la app ya configurada
 

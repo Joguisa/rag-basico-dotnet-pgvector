@@ -1,8 +1,9 @@
-﻿using System.Net.Http.Json;
+﻿using RagBasico.Core.Embeddings;
+using System.Net.Http.Json;
 
-namespace RagBasico.Core.Embeddings;
+namespace RagBasico.Data.Embeddings;
 
-public sealed class OllamaEmbeddingClient
+public sealed class OllamaEmbeddingClient : IEmbeddingClient
 {
     private readonly HttpClient _httpClient;
     private readonly string _model;

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -10,5 +10,8 @@
     <PackageReference Include="Npgsql" Version="10.0.3" />
     <PackageReference Include="Pgvector" Version="0.3.2" />
   </ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\RagBasico.Core\RagBasico.Core.csproj" />
+	</ItemGroup>
 
 </Project>
