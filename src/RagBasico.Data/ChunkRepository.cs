@@ -36,7 +36,7 @@ public sealed class ChunkRepository : IChunkRepository
             var source = cmd.Parameters.Add(new NpgsqlParameter("@source", NpgsqlDbType.Varchar));
             var chunkIndex = cmd.Parameters.Add(new NpgsqlParameter("@chunkIndex", NpgsqlDbType.Integer));
             var content = cmd.Parameters.Add(new NpgsqlParameter("@content", NpgsqlDbType.Varchar));
-            var embedding = cmd.Parameters.Add(new NpgsqlParameter("@embedding", NpgsqlDbType.Unknown));
+            var embedding = cmd.Parameters.Add(new NpgsqlParameter<Vector> { ParameterName = "@embedding" });
 
             await cmd.PrepareAsync();
 
@@ -59,5 +59,16 @@ public sealed class ChunkRepository : IChunkRepository
         }
     }
 
+    public async Task DeleteOrphanedChunksAsync(string source, int keepCount, CancellationToken ct = default)
+    {
+        const string sql = "DELETE FROM chunks WHERE source = @source AND chunk_index >= @keepCount";
 
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(sql, conn);
+
+        cmd.Parameters.Add(new NpgsqlParameter("@source", NpgsqlDbType.Varchar) { Value = source });
+        cmd.Parameters.Add(new NpgsqlParameter("@keepCount", NpgsqlDbType.Integer) { Value = keepCount });
+
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
 }

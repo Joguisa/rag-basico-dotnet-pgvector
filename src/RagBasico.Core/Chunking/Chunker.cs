@@ -9,7 +9,7 @@ public sealed class Chunker
     private static readonly string[] Separators = ["\n\n", "\n", ". ", " "]; // orden de intento: párrafo -> línea -> oración -> palabra
 
     // chunkSize y overlap se miden en caracteres, no en párrafos.
-    public IReadOnlyList<TextChunk> Split(string text, int chunkSize = 500, int overlap = 50) // punto de entrada público de la clase
+    public IReadOnlyList<TextChunk> Split(string text, int chunkSize, int overlap) // punto de entrada público de la clase
     {
         if (string.IsNullOrWhiteSpace(text)) // texto vacío o solo espacios: no hay nada que trocear
             return []; // lista vacía, nunca null (el caller no tiene que chequear null)
