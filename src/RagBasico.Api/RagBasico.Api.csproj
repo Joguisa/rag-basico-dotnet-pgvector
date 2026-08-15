@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RagBasico.Data\RagBasico.Data.csproj" />
+    <ProjectReference Include="..\RagBasico.Core\RagBasico.Core.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/RagBasico.Api/RagBasico.Api.csproj" />
+    <Project Path="src/RagBasico.Core/RagBasico.Core.csproj" />
     <Project Path="src/RagBasico.Data/RagBasico.Data.csproj" />
   </Folder>
 </Solution>
