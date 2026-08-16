@@ -1,0 +1,1 @@
+﻿Este es un documento de prueba para el pipeline de ingesta. Sirve para validar que la carga de archivos desde la carpeta data funcione correctamente. Contiene suficiente texto como para generar varios chunks con overlap.

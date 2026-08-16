@@ -62,5 +62,25 @@ app.MapPost("/ingest", async (
     return Results.Ok(new { source = request.Source, chunksIngested });
 });
 
+app.MapPost("/ingest/file", async (
+    IngestFileRequest request,
+    DocumentIngestionService ingestionService,
+    IOptions<IngestionOptions> ingestionOptions,
+    CancellationToken ct) =>
+{
+    // acá van los pasos 3, 4, 5
+    var safeFileName = Path.GetFileName(request.FileName);
+
+    var dataDirectory = ingestionOptions.Value.DataDirectory;
+    var fullPath = Path.Combine(dataDirectory, safeFileName);
+    if (!File.Exists(fullPath))
+        return Results.NotFound(new { error = $"Archivo '{safeFileName}' no encontrado." });
+
+    var content = await File.ReadAllTextAsync(fullPath, ct);
+
+    var chunksIngested = await ingestionService.IngestAsync(safeFileName, content, ct);
+    return Results.Ok(new { source = safeFileName, chunksIngested });
+});
+
 app.Run();
 

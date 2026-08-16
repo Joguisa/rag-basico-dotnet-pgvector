@@ -5,6 +5,6 @@
         public int ChunkSize { get; set; }
         public int Overlap { get; set; }
         public int BatchSize { get; set; }
-
+        public string DataDirectory { get; set; } = "";
     }
 }
