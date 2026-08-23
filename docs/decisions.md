@@ -61,3 +61,34 @@ que este mecanismo **no es el que se usaría en producción**, por cuatro motivo
 
 Ninguno de los cuatro se resuelve en este proyecto — quedan documentados como parte de
 "cómo escalar esto" (Día 5), siguiendo la misma regla de no sobre-ingeniería del MVP.
+
+## Día 3
+
+**`IChunkRepository.SearchAsync` recibe `float[]`, no `Pgvector.Vector`.** Mismo criterio que
+`StoredChunk.Embedding` en el Día 2: `Core` no depende del paquete `Pgvector` (detalle de
+infraestructura). La conversión a `Vector` ocurre únicamente dentro de `ChunkRepository`
+(Data), manteniendo la interfaz de `Core` libre de dependencias externas.
+
+**`TopK` vive en `RetrievalOptions` (Api), no en `Core`.** Mismo patrón que `IngestionOptions`:
+`Core` no depende de `Microsoft.Extensions.Options`, así que la configuración se resuelve en
+`Program.cs` (Api) y se pasa a `RetrievalService` como `int` plano por constructor.
+
+**`/ask` devuelve la distancia coseno cruda (`RetrievedChunk.Distance`), sin convertirla a un
+"score" de similitud.** Es más simple para el MVP y alcanza para validar manualmente la calidad
+del retrieval; la conversión (`1 - distance`) queda como mejora cosmética, no como necesidad
+funcional.
+
+**Sin transacción en `ChunkRepository.SearchAsync`.** Las transacciones agrupan escrituras que
+deben aplicarse todas o ninguna; un `SELECT` no modifica nada, así que no hay nada que revertir.
+Envolver una lectura en una transacción es sobrecosto sin beneficio.
+
+**Sin `try/catch` local en `SearchAsync`.** El método no hace ninguna acción de recuperación
+propia (no hay rollback, no hay traducción de excepciones), así que las excepciones no
+capturadas se propagan solas por la cadena de `await` hasta el manejo de errores por defecto de
+ASP.NET Core. Un `catch { throw; }` sin lógica adicional es un anti-patrón (catch-and-rethrow)
+que no cambia el comportamiento del programa. Un manejo de errores centralizado (middleware)
+queda anotado como mejora futura (Día 5), no como requisito del MVP.
+
+**`/ask` retorna solo los chunks recuperados, sin generación.** Cumple lo planeado: separar el
+retrieval de la generación permite validar la calidad de la búsqueda semántica de forma aislada
+antes de sumar el LLM en el Día 4.
