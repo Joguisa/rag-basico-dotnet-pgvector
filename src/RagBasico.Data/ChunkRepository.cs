@@ -2,6 +2,7 @@
 using NpgsqlTypes;
 using Pgvector;
 using RagBasico.Core.Persistence;
+using System.Data;
 
 namespace RagBasico.Data;
 
@@ -70,5 +71,47 @@ public sealed class ChunkRepository : IChunkRepository
         cmd.Parameters.Add(new NpgsqlParameter("@keepCount", NpgsqlDbType.Integer) { Value = keepCount });
 
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<RetrievedChunk>> SearchAsync(float[] queryEmbedding, int topK, CancellationToken ct = default)
+    {
+        var vector = new Vector(queryEmbedding); // convertir float a vector
+
+        var sql = """
+            SELECT source, chunk_index, content, embedding <=>
+            @queryEmbedding AS distance
+            FROM chunks
+            ORDER BY distance
+            LIMIT @topK
+            """;
+
+        // await using // Cuando termine de usar este objeto, liberalo correctamente de forma asíncrona.
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+
+        cmd.Parameters.Add(new NpgsqlParameter<Vector>("queryEmbedding", vector));
+        cmd.Parameters.AddWithValue("topK", topK);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var results = new List<RetrievedChunk>();
+
+        int sourceOrdinal = reader.GetOrdinal("source");
+        int chunkOrdinal = reader.GetOrdinal("chunk_index");
+        int contentOrdinal = reader.GetOrdinal("content");
+        int distanceOrdinal = reader.GetOrdinal("distance");
+
+        while (await reader.ReadAsync(ct))
+        {
+            results.Add(new RetrievedChunk(
+                reader.GetString(sourceOrdinal),
+                reader.GetInt32(chunkOrdinal),
+                reader.GetString(contentOrdinal),
+                reader.GetFloat(distanceOrdinal)
+            ));
+        }
+
+        return results;
+
     }
 }

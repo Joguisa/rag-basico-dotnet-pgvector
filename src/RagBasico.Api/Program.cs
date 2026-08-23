@@ -6,6 +6,7 @@ using RagBasico.Core.Chunking;
 using RagBasico.Core.Embeddings;
 using RagBasico.Core.Ingestion;
 using RagBasico.Core.Persistence;
+using RagBasico.Core.Retrieval;
 using RagBasico.Data;
 using RagBasico.Data.Embeddings;
 
@@ -14,7 +15,7 @@ var builder = WebApplication.CreateBuilder(args); // crea el constructor de la a
 var connectionString = builder.Configuration.GetConnectionString("Postgres")
     ?? throw new InvalidOperationException("Missing ConnectionStrings:Postgres");
 
-builder.Services.AddSingleton(_ => RagDataSource.Create(connectionString)); 
+builder.Services.AddSingleton(_ => RagDataSource.Create(connectionString));
 
 builder.Services.AddHttpClient<IEmbeddingClient, OllamaEmbeddingClient>((sp, client) =>
 {
@@ -24,6 +25,7 @@ builder.Services.AddHttpClient<IEmbeddingClient, OllamaEmbeddingClient>((sp, cli
 });
 builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
 builder.Services.Configure<IngestionOptions>(builder.Configuration.GetSection("Ingestion"));
+builder.Services.Configure<RetrievalOptions>(builder.Configuration.GetSection("Retrieval"));
 builder.Services.AddScoped<IChunkRepository, ChunkRepository>();
 builder.Services.AddScoped<Chunker>();
 
@@ -38,6 +40,15 @@ builder.Services.AddScoped<DocumentIngestionService>(sp => // sp significa: ISer
     var chunkRepository = sp.GetRequiredService<IChunkRepository>();
 
     return new DocumentIngestionService(chunker, embeddingClient, chunkRepository, batchSize, chunkSize, overlap);
+});
+
+builder.Services.AddScoped<RetrievalService>(sp =>
+{
+    var topK = sp.GetRequiredService<IOptions<RetrievalOptions>>().Value.TopK;
+    var embeddingClient = sp.GetRequiredService<IEmbeddingClient>();
+    var chunkRepository = sp.GetRequiredService<IChunkRepository>();
+
+    return new RetrievalService(embeddingClient, chunkRepository, topK);
 });
 
 var app = builder.Build(); // construye la app ya configurada
@@ -80,6 +91,20 @@ app.MapPost("/ingest/file", async (
 
     var chunksIngested = await ingestionService.IngestAsync(safeFileName, content, ct);
     return Results.Ok(new { source = safeFileName, chunksIngested });
+});
+
+app.MapPost("/ask", async (
+    AskRequest request,
+    RetrievalService service,
+    CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Question))
+        return Results.BadRequest(new { error = $"La pregunta es requerida" });
+
+    var top = await service.SearchAsync(request.Question, ct);
+    return Results.Ok(new { question = request.Question, top });
+
+
 });
 
 app.Run();
