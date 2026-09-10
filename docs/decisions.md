@@ -92,3 +92,36 @@ queda anotado como mejora futura (Día 5), no como requisito del MVP.
 **`/ask` retorna solo los chunks recuperados, sin generación.** Cumple lo planeado: separar el
 retrieval de la generación permite validar la calidad de la búsqueda semántica de forma aislada
 antes de sumar el LLM en el Día 4.
+
+## Día 4
+
+**Modelo de generación fijado a `llama3.1:8b`.** Mismo criterio que `nomic-embed-text:latest`
+en el Día 1: tag exacto, sin `latest` ni rangos abiertos, para que el comportamiento del pipeline
+no cambie por una actualización silenciosa del modelo.
+
+**Prompt de dos mensajes: instrucciones en `system`, contexto + pregunta en `user`.** Es la
+convención estándar de las APIs de chat (Ollama incluida): el rol `system` lleva reglas de
+comportamiento fijas para toda la llamada (responder solo con el contexto dado, avisar si no
+alcanza, citar fuentes con el formato `[source:chunk_index]`), y el rol `user` lleva la entrada
+concreta de ese turno (el contexto recuperado más la pregunta). Se descartó meter el contexto
+también en `system` por ser redundante: duplicar el mismo texto en los dos mensajes no le agrega
+información al modelo, solo tokens de más.
+
+**`OllamaChatClient` recibe `HttpClient` + `string generationModel` por constructor, no
+`IOptions<OllamaOptions>`.** Sigue el mismo patrón de configuración ya documentado para
+`RetrievalService`/`DocumentIngestionService`: los servicios de `Core`/`Data` reciben valores
+planos, y el binding a `IOptions<T>` queda solo en `Program.cs`. Como este cliente además
+necesita un `HttpClient` con `BaseAddress` configurado, `Program.cs` usa `AddHttpClient("Ollama",
+...)` para registrar y configurar el `HttpClient` con nombre, y `IHttpClientFactory.CreateClient
+("Ollama")` dentro de una factory `AddScoped<IChatClient>(sp => ...)` para construir el cliente a
+mano — en vez de `AddHttpClient<IChatClient, OllamaChatClient>(...)`, que le delega a DI la
+construcción completa de la clase y por lo tanto no puede resolver un `string` suelto que no está
+registrado como servicio. Se corrigió también `OllamaEmbeddingClient` (Día 2) al mismo patrón,
+que hasta ahora inyectaba `IOptions<OllamaOptions>` directamente y rompía esta regla.
+
+**`POST /ask` cambia de contrato: de `{ question, chunks }` a `{ question, answer, citations }`.**
+`answer` es el texto generado por el LLM; `citations` es la misma lista estructurada de
+`RetrievedChunk` (`source`, `chunkIndex`, `content`, `distance`) que ya se usaba como contexto —
+no se parsean las citas del texto generado. Motivo: confiar en la lista de chunks que
+efectivamente se le mandó al modelo es más confiable que confiar en que el modelo haya escrito
+bien el formato de cita dentro de la respuesta.
