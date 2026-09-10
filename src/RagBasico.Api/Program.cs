@@ -2,13 +2,16 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using RagBasico.Api.Configuration;
 using RagBasico.Api.DTOs;
+using RagBasico.Core.Answering;
 using RagBasico.Core.Chunking;
 using RagBasico.Core.Embeddings;
+using RagBasico.Core.Generation;
 using RagBasico.Core.Ingestion;
 using RagBasico.Core.Persistence;
 using RagBasico.Core.Retrieval;
 using RagBasico.Data;
 using RagBasico.Data.Embeddings;
+using RagBasico.Data.Generation;
 
 var builder = WebApplication.CreateBuilder(args); // crea el constructor de la aplicacion web
 
@@ -17,17 +20,42 @@ var connectionString = builder.Configuration.GetConnectionString("Postgres")
 
 builder.Services.AddSingleton(_ => RagDataSource.Create(connectionString));
 
-builder.Services.AddHttpClient<IEmbeddingClient, OllamaEmbeddingClient>((sp, client) =>
+builder.Services.AddHttpClient("Embedding", (sp, client) =>
 {
     var baseUrl = sp.GetRequiredService<IOptions<OllamaOptions>>().Value.BaseUrl;
-    if (!string.IsNullOrEmpty(baseUrl))
-        client.BaseAddress = new Uri(baseUrl);
+    client.BaseAddress = new Uri(baseUrl);
 });
+
+builder.Services.AddScoped<IEmbeddingClient>(sp =>
+{
+    var embeddingModel = sp.GetRequiredService<IOptions<OllamaOptions>>().Value.EmbeddingModel;
+
+    var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("Embedding");
+
+    return new OllamaEmbeddingClient(httpClient, embeddingModel);
+});
+
+builder.Services.AddHttpClient("Ollama", (sp, client) =>
+{
+    var baseUrl = sp.GetRequiredService<IOptions<OllamaOptions>>().Value.BaseUrl;
+    client.BaseAddress = new Uri(baseUrl);
+});
+
+builder.Services.AddScoped<IChatClient>(sp =>
+{
+    var generationModel = sp.GetRequiredService<IOptions<OllamaOptions>>().Value.GenerationModel;
+
+    var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("Ollama");
+
+    return new OllamaChatClient(httpClient, generationModel);
+});
+
 builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
 builder.Services.Configure<IngestionOptions>(builder.Configuration.GetSection("Ingestion"));
 builder.Services.Configure<RetrievalOptions>(builder.Configuration.GetSection("Retrieval"));
 builder.Services.AddScoped<IChunkRepository, ChunkRepository>();
 builder.Services.AddScoped<Chunker>();
+
 
 // No lo hacemos builder.Services.AddScoped<DocumentIngestionService>(); porque tenemos int batchSize y DI no sabe qué número poner ahí.
 builder.Services.AddScoped<DocumentIngestionService>(sp => // sp significa: IServiceProvider "Dame una instancia de este servicio que ya registré."
@@ -50,6 +78,9 @@ builder.Services.AddScoped<RetrievalService>(sp =>
 
     return new RetrievalService(embeddingClient, chunkRepository, topK);
 });
+
+builder.Services.AddScoped<GenerationService>();
+builder.Services.AddScoped<AnswerService>();
 
 var app = builder.Build(); // construye la app ya configurada
 
@@ -95,16 +126,19 @@ app.MapPost("/ingest/file", async (
 
 app.MapPost("/ask", async (
     AskRequest request,
-    RetrievalService service,
+    AnswerService service,
     CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(request.Question))
         return Results.BadRequest(new { error = $"La pregunta es requerida" });
 
-    var top = await service.SearchAsync(request.Question, ct);
-    return Results.Ok(new { question = request.Question, top });
-
-
+    var result = await service.AskAsync(request.Question, ct);
+    return Results.Ok(new
+    {
+        question = request.Question,
+        answer = result.Answer,
+        citations = result.Citations
+    });
 });
 
 app.Run();
