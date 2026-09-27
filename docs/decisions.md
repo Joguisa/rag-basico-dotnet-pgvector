@@ -59,7 +59,7 @@ que este mecanismo **no es el que se usaría en producción**, por cuatro motivo
    documento (con el fix de `DeleteOrphanedChunksAsync` para no dejar huérfanos). Un sistema real
    trackearía un hash/versión por documento para reprocesar solo lo que cambió.
 
-Ninguno de los cuatro se resuelve en este proyecto — quedan documentados como parte de
+Ninguno de los cuatro se resuelve en este proyecto - quedan documentados como parte de
 "cómo escalar esto" (Día 5), siguiendo la misma regla de no sobre-ingeniería del MVP.
 
 ## Día 3
@@ -114,14 +114,63 @@ planos, y el binding a `IOptions<T>` queda solo en `Program.cs`. Como este clien
 necesita un `HttpClient` con `BaseAddress` configurado, `Program.cs` usa `AddHttpClient("Ollama",
 ...)` para registrar y configurar el `HttpClient` con nombre, y `IHttpClientFactory.CreateClient
 ("Ollama")` dentro de una factory `AddScoped<IChatClient>(sp => ...)` para construir el cliente a
-mano — en vez de `AddHttpClient<IChatClient, OllamaChatClient>(...)`, que le delega a DI la
+mano - en vez de `AddHttpClient<IChatClient, OllamaChatClient>(...)`, que le delega a DI la
 construcción completa de la clase y por lo tanto no puede resolver un `string` suelto que no está
 registrado como servicio. Se corrigió también `OllamaEmbeddingClient` (Día 2) al mismo patrón,
 que hasta ahora inyectaba `IOptions<OllamaOptions>` directamente y rompía esta regla.
 
 **`POST /ask` cambia de contrato: de `{ question, chunks }` a `{ question, answer, citations }`.**
 `answer` es el texto generado por el LLM; `citations` es la misma lista estructurada de
-`RetrievedChunk` (`source`, `chunkIndex`, `content`, `distance`) que ya se usaba como contexto —
+`RetrievedChunk` (`source`, `chunkIndex`, `content`, `distance`) que ya se usaba como contexto -
 no se parsean las citas del texto generado. Motivo: confiar en la lista de chunks que
 efectivamente se le mandó al modelo es más confiable que confiar en que el modelo haya escrito
 bien el formato de cita dentro de la respuesta.
+
+## Día 5
+
+**Dos proyectos de test, no uno.** `RagBasico.Core.Tests` (chunking) no depende de nada externo,
+igual que `RagBasico.Core` en sí - corre en milisegundos, sin Docker. `RagBasico.Data.Tests`
+(retrieval) sí necesita Postgres real, así que vive separado: quien solo quiere correr los tests
+rápidos (`dotnet test tests/RagBasico.Core.Tests`) no paga el costo de levantar un contenedor.
+
+**xUnit sobre NUnit.** Es el framework de test más usado hoy en proyectos .NET nuevos, con mejor
+integración nativa con `dotnet test`. No hay un requisito del proyecto que empuje a NUnit
+(estilo `[TestFixture]`/`[SetUp]`), así que se tomó la opción más estándar.
+
+**Testcontainers sobre reusar el Postgres de `docker-compose.yml`.** La alternativa más simple
+era correr los tests de integración contra el contenedor que ya usás para desarrollo. Se
+descartó por dos motivos: (1) un test run no queda hermético - si algo insertado por un test
+anterior no se limpia bien, contamina la corrida siguiente; (2) acopla `dotnet test` a un paso
+manual (`docker-compose up -d`) que nadie que clone el repo sabe que tiene que hacer antes.
+Testcontainers levanta un contenedor `pgvector/pgvector:0.8.6-pg16` efímero - misma imagen
+pinneada que el compose - por cada corrida de la clase de test, y lo destruye al terminar.
+
+**Dos niveles de `IAsyncLifetime`, no uno.** `PostgresFixture` (una instancia por clase, vía
+`IClassFixture<PostgresFixture>`) levanta y baja el contenedor una sola vez - es la parte cara.
+`ChunkRepositoryTests` (la clase de test en sí) implementa `IAsyncLifetime` por separado, y usa
+`InitializeAsync` para truncar la tabla `chunks` antes de **cada** `[Fact]` - xUnit crea una
+instancia nueva de la clase de test por método, así que ese `InitializeAsync` corre una vez por
+test, no una vez por clase. Sin este segundo nivel, un test podría ver filas que dejó otro
+test anterior corriendo contra el mismo contenedor compartido.
+
+**El esquema se aplica con `WithBindMount` a `/docker-entrypoint-initdb.d`, no ejecutando
+`001_schema.sql` a mano después de levantar el contenedor.** El primer intento hacía esto último
+y falló con `Cannot resolve 'vector' to a fully qualified datatype name`: Npgsql resuelve y
+cachea el catálogo de tipos de Postgres (`pg_type`) en la primera conexión física que abre un
+`NpgsqlDataSource`, y esa conexión ocurría para correr el propio `CREATE EXTENSION vector` -
+antes de que la extensión existiera, dejando el cache sin ese tipo para el resto de la vida del
+contenedor. La solución es dejar que Postgres corra el script durante su propia inicialización
+(el mismo mecanismo que ya usa `docker-compose.yml`), garantizando que la extensión exista
+**antes** de que la app abra ninguna conexión. Este orden (extensión/tipo antes de la primera
+conexión) aplica a cualquier tipo no nativo de Postgres con Npgsql, no solo a `vector` - queda
+como advertencia general, no solo como fix puntual.
+
+**`Testcontainers.PostgreSql` pinneado a `4.15.0`.** Verificado como la última versión estable en
+NuGet al momento de agregarlo (regla operativa #1: no asumir versiones de memoria).
+
+**Cobertura de `Chunker` organizada en 4 bloques, no exhaustiva por combinatoria.** Los tests
+siguen las ramas explícitas del código (validaciones de parámetros, comportamiento básico,
+cada nivel de la jerarquía de separadores por separado, comportamiento del overlap) en vez de
+generar todas las combinaciones posibles de `chunkSize`/`overlap`/texto. El objetivo es cubrir
+cada decisión de diseño documentada en el propio código (jerarquía de separadores, reinserción
+del punto en ". ", `HardSplit` como último recurso), no maximizar el conteo de tests.
