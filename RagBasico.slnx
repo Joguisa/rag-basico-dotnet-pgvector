@@ -4,4 +4,8 @@
     <Project Path="src/RagBasico.Core/RagBasico.Core.csproj" />
     <Project Path="src/RagBasico.Data/RagBasico.Data.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RagBasico.Core.Tests/RagBasico.Core.Tests.csproj" />
+    <Project Path="tests/RagBasico.Data.Tests/RagBasico.Data.Tests.csproj" />
+  </Folder>
 </Solution>
